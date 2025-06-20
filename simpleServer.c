@@ -123,9 +123,25 @@ int main(void)
 
         if(!fork()) { // this is the child process
             close(sockfd); // child doesn't need the listener
-            if(send(new_fd, "Hello, world!", 13, 0) == -1)
+            char welcome[] = "Sie sind mit dem Server verbunden\n"
+                             "Commands:\n"
+                             " [q] : Disconnect\n"
+                             " [g] : Game-Menu\n";
+            if(send(new_fd, welcome, strlen(welcome), 0) == -1)
                 perror("send");
-            close(new_fd);
+            char client_input;
+            // quit = getchar(); --> recv() verwenden, da man von einem socket liest
+            ssize_t received = recv(new_fd, &client_input, 1, 0); // versucht 1 Byte zu empfangen
+            // ssize_t -> ss(signed size) wird für die anzahl von bytes oder die Größe von Daten verwendet
+            //            die von Funktionen zurückgegeben werden kann (kompatibler als int)
+            switch(client_input){
+                case 'q':
+                    printf("%s disconnected", s);
+                    if(send(new_fd, "good Bye :)\n", 11, 0))
+                        perror("send");
+                    close(new_fd);
+                case 'g':
+            }
             exit(0);
         }
         close(new_fd);  // parent doesnt't need this
