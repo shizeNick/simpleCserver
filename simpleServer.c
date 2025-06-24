@@ -34,10 +34,10 @@ void sigchld_handler(int s)
 }
 
 // get sockaddr, IPv4 or IPv6
-void *get_in_addr(struct sockaddr *sad)
+void *get_in_addr(struct sockaddr * sad)
 {
     if(sad->sa_family == AF_INET){
-        return &(((struct sockaddr_in*)sad)->sin_addr);
+        return &(((struct sockaddr_in *)sad)->sin_addr);
     }
 
     return &(((struct sockaddr_in6*)sad)->sin6_addr);
@@ -46,7 +46,10 @@ void *get_in_addr(struct sockaddr *sad)
 int main(void)
 {
     int sockfd, new_fd; // listen on sock_fd, new connection on new fd
-    struct addrinfo hints, *servinfo, *p;
+    struct addrinfo hints, *servinfo, *p; // - hints ist der name der varibale vom typ struct addrinfo
+                                          // - *servinfo ist ein pointer auf eine addrinfo, also auf eine von n verbindungen. 
+                                          //   Diese entsprechen dann den festgelegte Hints kriterien
+                                          //    
     struct sockaddr_storage their_addr; // connector's address information
     socklen_t sin_size;
     struct sigaction sa;
@@ -54,17 +57,23 @@ int main(void)
     char s [INET6_ADDRSTRLEN];
     int rv;
 
+    // felder von hints werden ausgefüllt, die getaddrinfo() verwenden soll
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = AI_PASSIVE; // use my IP
-    
+    hints.ai_flags = AI_PASSIVE; // use my IP , für Clients wird es nicht gebraucht
+   
+    // getaddrinfo() weist den Speicher für die Ergebnisliste (servinfo) automatisch zu, also die Information die für eine verbindung, gebraucht werden
+    // &hints ist die Adresse der hints-Struktur. Diese Struktur dient als Eingabeparameter, um getaddrinfo() mitzuteilen, welche Kriterien die gewünschten Adressinformationen erfüllen sollen 
+    // NULL wird meisten bei einem server gesetzt, da dieser sagt, dass ich auf alle vorhandenen Netzwerkschnittstellen des servers lauchen möchte 
+    //   -> man könnte aber auch nur eine spezifische lokale ip addresse angeben wie die loopback vom server, wlan0 vom server oder die eth.
+    // Und auf der &servinfo addresse werden schlussendlich die erfassten potenziellen verbindungen als eine Liste gespeichert
     if((rv = getaddrinfo(NULL, PORT, &hints, &servinfo)) != 0){
         fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
         return 1;
     }
 
-    // loop through all the results and bind to the first we can
+    // durchläuft die erfasste Liste auf &servinfo um jeweils das Socket auf das Interface aufzusetzn
     for(p = servinfo; p != NULL; p = p -> ai_next){
         if ((sockfd = socket(p -> ai_family, p -> ai_socktype, p -> ai_protocol)) == -1){
             perror("server : bind");
@@ -87,13 +96,17 @@ int main(void)
         
     }
 
-    freeaddrinfo(servinfo); // all done with this structure
-    
-    if(p == NULL){
+    // freeaddrinfo(servinfo); macht den Speicher frei, der von der Funktion getaddrinfo() für die Adressinformationen (der Netzwerkschnittstellen) zugewiesen wurde.    
+    freeaddrinfo(servinfo);     if(p == NULL){
         fprintf(stderr, "server: failed to bind\n");
         exit(1);
     }
-
+ 
+    // listen(sockfd, BACKLOG): Versetzt den Socket in den passiven Modus,
+    // um auf eingehende Verbindungsanfragen zu lauschen und diese in einer
+    // Warteschlange (mit maximal BACKLOG ausstehenden Verbindungen) zu halten,
+    // bis sie mit accept() verbunden werden
+    // -->  accpet() ist dann der eigentliche erste Kontakt mit dem Client
     if(listen(sockfd, BACKLOG) == -1){
         perror("listen");
         exit(1);
@@ -117,7 +130,6 @@ int main(void)
             perror("accept");
             continue;
         }
-
         inet_ntop(their_addr.ss_family, get_in_addr((struct sockaddr *)&their_addr), s, sizeof s);
         printf("server : got connection from %s\n", s);
 
@@ -150,3 +162,5 @@ int main(void)
 }
 
 
+// inet_ntop converts an IP address in numbers-and-dots notaion into either a struct in_addr or struct in6_add
+// pton -> presentation to network
