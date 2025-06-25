@@ -5,6 +5,7 @@
 
 
 char* show();
+char* preview();
 void choose_name();
 void init_ground();
 int win();
@@ -14,12 +15,44 @@ int main(){
     
     choose_name();
     init_ground();
-    char* board = show();
+    // game intro preview
+    char* board = preview();
     if (board != NULL) { // Immer gut, NULL-Check zu machen
         printf("\n%s", board);
         free(board); // Speicher freigeben
     }
-    printf("\n%s", board);
     
+    int rounds = 1; 
+    int winner;
+    while((winner = win()) == 0) {
+
+        char* board = show();
+        if (board != NULL) { // Immer gut, NULL-Check zu machen
+            printf("\n%s", board);
+            free(board); // Speicher freigeben
+        }
+        printf("\n-------------\n%s", board);
+        if(rounds % 2 != 0){
+            int i;
+            printf("Spieler 1 ist am Zug!");
+            scanf("%i", &i);
+            move(i, 1);
+            rounds++;
+        }else {
+            int i;
+            printf("Spieler 2 ist am Zug!");
+            scanf("%i", &i);
+            move(i, 2);
+            rounds++;
+        }
+    }
+    if(winner == 1){
+        printf("~~~ Spieler 1 hat Gewonnen! ~~~");
+    }else if(winner == 2){
+        printf("~~~ Spieler 2 hat Gewonnen! ~~~");
+    }else {
+        printf("Etwas ist schief gelaufen");
+    }
+
     return 0;
 }

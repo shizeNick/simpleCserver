@@ -4,6 +4,7 @@ extern char player_2[12];
 
 // funktionen 
 char* show();
+char* preview();
 void choose_name();
 void init_ground();
 int win();
