@@ -126,9 +126,9 @@ char* show(){
         for(int m = 1; m <= 3; m++){
            if(i % 2 != 0){ // Wenn es eine Spielfeld-Zeile ist
                 if(m == 1 || m == 2){
-                    current_pos += sprintf(current_pos, "%c  |", ground[index_line][m-1]);
+                    current_pos += sprintf(current_pos, " %c |", ground[index_line][m-1]);
                 } else { // m == 3
-                    current_pos += sprintf(current_pos, "%c",ground[index_line][m-1]);
+                    current_pos += sprintf(current_pos, " %c",ground[index_line][m-1]);
                 }
             } else { // Wenn es eine Trennlinie ist (i % 2 == 0)
                 current_pos += sprintf(current_pos, "--- ") ;

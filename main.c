@@ -31,25 +31,26 @@ int main(){
             printf("\n%s", board);
             free(board); // Speicher freigeben
         }
-        printf("\n-------------\n%s", board);
+        printf("\n-------------\n");
+        printf("%s", board);
         if(rounds % 2 != 0){
             int i;
-            printf("Spieler 1 ist am Zug!");
+            printf("%s ist am Zug!\n", player_1);
             scanf("%i", &i);
             move(i, 1);
             rounds++;
         }else {
             int i;
-            printf("Spieler 2 ist am Zug!");
+            printf("%s ist am Zug!\n", player_2);
             scanf("%i", &i);
             move(i, 2);
             rounds++;
         }
     }
     if(winner == 1){
-        printf("~~~ Spieler 1 hat Gewonnen! ~~~");
+        printf("~~~ %s hat Gewonnen! ~~~", player_1);
     }else if(winner == 2){
-        printf("~~~ Spieler 2 hat Gewonnen! ~~~");
+        printf("~~~ %s hat Gewonnen! ~~~", player_2);
     }else {
         printf("Etwas ist schief gelaufen");
     }
