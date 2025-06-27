@@ -4,24 +4,63 @@
 #include <string.h>
 #include <strings.h>
 
-char player_1[12];
-char player_2[12];
+char player_1[20];
+char player_2[20];
 static char ground[3][3];
 const int player1 = 1;
 const int player2 = 2;
+int pNumber;
 
-void choose_name(){
-    printf("Gamer-Tag Player 1: \n");
-    fgets(player_1, 12, stdin);
-    //if(strcmp(player_1, " ")) {
-    //    printf("Fehler beim eingeben des Namens von Player 1.\n(mind. 12 Zeichen!)");
-    //}
-    printf("------\n");
-    printf("Gamer-Tag Player 2: \n");
-    fgets(player_2, 12, stdin);
-    //if(strcmp(player_2, " ")) {
-    //    printf("Fehler beim eingeben des Namens von Player 2.\n(mind. 12 Zeichen!)");
-    //}
+void choose_name(int playerNumber) { // Umbenennung zu playerNumber für Klarheit
+    char *playerName;
+    size_t bufferSize;
+
+    // Bestimme, welchen Spielernamen wir bearbeiten
+    if (playerNumber == 1) {
+        playerName = player_1;
+        bufferSize = sizeof(player_1);
+        printf("Gamer-Tag Player 1 (max %zu Zeichen): ", bufferSize - 1);
+    } else if (playerNumber == 2) {
+        playerName = player_2;
+        bufferSize = sizeof(player_2);
+        printf("Gamer-Tag Player 2 (max %zu Zeichen): ", bufferSize - 1);
+    } else {
+        printf("Fehler: Ungültige Spielernummer bei der Namen-Initialisierung.\n");
+        return; // Funktion beenden bei Fehler
+    }
+
+    // Schleife, bis eine gültige Eingabe erfolgt
+    while (1) {
+        // Lese die Eingabe
+        if (fgets(playerName, bufferSize, stdin) == NULL) {
+            // Fehler beim Lesen der Eingabe (z.B. EOF)
+            printf("Fehler beim Lesen der Eingabe.\n");
+            return; // Funktion beenden bei schwerwiegendem Fehler
+        }
+
+        // Überprüfe, ob ein Zeilenumbruch gelesen wurde (d.h. die Eingabe war nicht zu lang)
+        if (playerName[bufferSize - 1] != '\n' && playerName[bufferSize - 1] != '\0') {
+            // Der Puffer war nicht groß genug für die gesamte Zeile
+            printf("WOW, stop there Bro. Du hast zu viele Zeichen eingegeben.\n");
+
+            // Puffer leeren, um Überlauf zu vermeiden
+            int c;
+            int overflow = 0;
+            while ((c = fgetc(stdin)) != '\n' && c != EOF) {
+                overflow++;
+            }
+            if (overflow > 0) {
+                 printf("Du hast %i Zeichen zu viel geschrieben.\n", overflow);
+            }
+            // Schleife läuft weiter, um erneute Eingabe anzufordern
+        } else {
+            // Eingabe war im Limit, entferne den Zeilenumbruch, falls vorhanden
+            // (oder ersetze ihn mit '\0' für Stringende)
+            // strcspn findet die Länge des Strings vor dem ersten '\n'
+            playerName[strlen(playerName)-1] = '\0';
+            break; // Gültige Eingabe, Schleife verlassen
+        }
+    }
 }
 
 void init_ground(){
@@ -97,7 +136,7 @@ int move(int i, int player){
         printf("Bitte geben sie einen gültigen Wert an!");
         return -1;
     }else if(ground[row][column] != ' '){
-        printf("Dises Feld ist schon gesetzt!");
+        printf("Dises Feld ist schon gesetzt!\n:");
         return -1;      
     }else if (player == 1) {
         ground[row][column] = 'x';
