@@ -8,16 +8,28 @@
 #include <string.h>
 #include <netinet/in.h>
 #include <sys/wait.h>
+#include <arpa/inet.h> // for getting client address function
 
 #define PORT "1337"
+
+void *get_addr_client(struct sockaddr *sad){
+    if(sad->sa_family == AF_INET){
+        return &(((struct sockaddr_in *)sad)->sin_addr);
+    }
+    else{
+        return &(((struct sockaddr_in6 *)sad)->sin6_addr);
+    }
+}
 
 int main(int argc, char *argv[])
 {
     struct addrinfo hints, *servinfo, *p;
+    struct sockaddr_storage clients_addr; // for connection addr socket informatione storage
     socklen_t sin_size;
     int getI;
     int sockfd, newsockfd;
     int optval;
+    char client_to_s[39]; // 39 is the length of an ipv6 addr in chars and with ":"
     char echo_input[1024];
 
     //speicher frei machen und felder für addrinfo struct setzen
@@ -59,14 +71,19 @@ int main(int argc, char *argv[])
     }
     // does itself return -1 in an error
     // p wird benutzt da ich meine eigenes echo möchte
-    newsockfd = accept(sockfd, p->ai_addr, &sin_size);
+    newsockfd = accept(sockfd, (struct sockaddr *)&clients_addr, &sin_size);
+
+
     
     while(1){
         
         if(!(recv(newsockfd, &echo_input, 1024, 0))){
             break;
         }
-        printf("msg from %s -> %s", p->ai_addr->sa_data, echo_input);
+        // get addr of client
+        inet_ntop(clients_addr.ss_family, get_addr_client((struct sockaddr *)&clients_addr), client_to_s, sizeof(client_to_s));
+
+        printf("msg from %s -> %s", client_to_s, echo_input);
         if((send(newsockfd, echo_input, strlen(echo_input), 0)) == -1){
             perror("send");
         }
