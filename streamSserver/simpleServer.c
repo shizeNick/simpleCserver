@@ -77,7 +77,7 @@ int main(void)
     for(p = servinfo; p != NULL; p = p -> ai_next){
         if ((sockfd = socket(p -> ai_family, p -> ai_socktype, p -> ai_protocol)) == -1){
             perror("server : bind");
-            printf("Socket auf %p konnte nicht erstellt werden!", *p);
+            printf("Socket auf %p konnte nicht erstellt werden!", p);
             continue;
         }
 
