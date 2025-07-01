@@ -41,6 +41,47 @@ struct arp_packet {
     struct in_addr target_ip;
 };
 
+int get_interface_info(const char* ifac_n, unsigned char *local_m_buffer, int *if_index_buffer){
+
+    int ioctl_sockfd;
+    struct ifreq if_idx;
+    struct ifreq if_mac;
+
+    ioctl_sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (ioctl_sockfd == -1) {
+        perror("ioctl_sockfd creation");
+        return -1;
+    }
+
+    printf("ioctl Socket erstellt.\n");
+    
+        memset(&if_idx, 0, sizeof(struct ifreq));
+    strncpy(if_idx.ifr_name, ifac_n, IFNAMSIZ - 1);
+    if_idx.ifr_name[IFNAMSIZ - 1] = '\0';
+    if (ioctl(ioctl_sockfd, SIOCGIFINDEX, &if_idx) == -1) {
+        perror("SIOCGIFINDEX");
+        close(ioctl_sockfd);
+        return -1;
+    }
+    *if_index_buffer = if_idx.ifr_ifindex; // Korrigiert
+    printf("Interface: %s\nIndex: %d\n", ifac_n, *if_index_buffer);
+
+    memset(&if_mac, 0, sizeof(struct ifreq));
+    strncpy(if_mac.ifr_name, ifac_n, IFNAMSIZ - 1);
+    if_mac.ifr_name[IFNAMSIZ - 1] = '\0';
+    if (ioctl(ioctl_sockfd, SIOCGIFHWADDR, &if_mac) == -1) { perror("SIOCGIFHWADDR");
+        close(ioctl_sockfd);
+        return -1;
+    }
+    memcpy(local_m_buffer, if_mac.ifr_hwaddr.sa_data, ETH_ALEN);
+    printf("Eigene MAC-Adresse: ");
+    print_mac(local_m_buffer);
+
+    close(ioctl_sockfd);
+    printf("ioctl Socket geschlossen.\n");
+    return 0;
+}
+
 int main(int argc, char *argv[])
 {
     if (argc < 3 || argc > 4) {
@@ -53,10 +94,10 @@ int main(int argc, char *argv[])
     const char* spoof_ip_str = argv[2];
 
     int raw_sockfd;
-    int ioctl_sockfd;
     struct ifreq if_idx;
     struct ifreq if_mac;
 
+    int if_index;
     unsigned char local_mac[ETH_ALEN];
     unsigned char target_mac_bytes[ETH_ALEN];
     unsigned char broadcast_mac_val[ETH_ALEN] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
@@ -71,50 +112,15 @@ int main(int argc, char *argv[])
         printf("Using Broadcast as target MAC address.\n");
         memcpy(target_mac_bytes, broadcast_mac_val, ETH_ALEN);
     }
-    int if_index;
-
-    ioctl_sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (ioctl_sockfd == -1) {
-        perror("ioctl_sockfd creation");
-        return 1;
-    }
-    printf("ioctl Socket erstellt.\n");
 
     raw_sockfd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ARP));
     if (raw_sockfd == -1) {
         perror("raw_sockfd creation");
-        close(ioctl_sockfd);
         return 1;
     }
     printf("Raw Socket für ARP-Pakete erstellt.\n");
 
-    memset(&if_idx, 0, sizeof(struct ifreq));
-    strncpy(if_idx.ifr_name, iface_name, IFNAMSIZ - 1);
-    if_idx.ifr_name[IFNAMSIZ - 1] = '\0';
-    if (ioctl(ioctl_sockfd, SIOCGIFINDEX, &if_idx) == -1) {
-        perror("SIOCGIFINDEX");
-        close(ioctl_sockfd);
-        close(raw_sockfd);
-        return 1;
-    }
-    if_index = if_idx.ifr_ifindex; // Korrigiert
-    printf("Interface: %s\nIndex: %d\n", iface_name, if_index);
-
-    memset(&if_mac, 0, sizeof(struct ifreq));
-    strncpy(if_mac.ifr_name, iface_name, IFNAMSIZ - 1);
-    if_mac.ifr_name[IFNAMSIZ - 1] = '\0';
-    if (ioctl(ioctl_sockfd, SIOCGIFHWADDR, &if_mac) == -1) {
-        perror("SIOCGIFHWADDR");
-        close(ioctl_sockfd);
-        close(raw_sockfd);
-        return 1;
-    }
-    memcpy(local_mac, if_mac.ifr_hwaddr.sa_data, ETH_ALEN);
-    printf("Eigene MAC-Adresse: ");
-    print_mac(local_mac);
-
-    close(ioctl_sockfd);
-    printf("ioctl Socket geschlossen.\n");
+    get_interface_info(iface_name, local_mac, &if_index);
 
     struct arp_packet arp_p;
 
@@ -157,6 +163,10 @@ int main(int argc, char *argv[])
         return 1;
     }
     printf("ARP-Paket gesendet.\n");
+
+    while(1){
+         
+    }
 
     close(raw_sockfd);
     return 0;
