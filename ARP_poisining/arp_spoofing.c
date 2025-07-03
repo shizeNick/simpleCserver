@@ -174,8 +174,15 @@ int set_ip_forwarding(int enable) {
 
 // Diese funktion wird für jedes erfasste Paket aufgerufen.
 // Sie ist da um die eigentlichen Manipulationen, weiterleitungen, etc. zu vollbringen
-void package_handler(const u_char *user_data, struct pcap_pkthdr *pkthdr, const u_char *packet_data){
+void package_handler(const u_char *user_data, struct pcap *handle, struct pcap_pkthdr *pkthdr, const u_char *packet_data){
     printf("package captured - length: %d Bytes\n", pkthdr->len);
+
+    // dest mac
+    printf("%x:%x:%x:%x:%x:%x\n\n", packet_data[0], packet_data[1], packet_data[2], packet_data[3], packet_data[4], packet_data[5]);
+    // source mac
+    printf("%x:%x:%x:%x:%x:%x\n\n", packet_data[6], packet_data[7], packet_data[8], packet_data[9], packet_data[10], packet_data[11]);
+    pcap_inject(handle, packet_data, pkthdr->len);
+
 }
 
 int main(int argc, char *argv[])
@@ -252,7 +259,7 @@ int main(int argc, char *argv[])
         const u_char *packet_data;
         int p_res = pcap_next_ex(handle, &header, &packet_data);
         if(p_res == 1){ // erflogreiche erfassung
-            package_handler(NULL, header, packet_data);
+            package_handler(NULL, handle, header, packet_data);
         }else if(p_res == 0){
             printf("waiting for packages...\n");
         }else if(p_res == -1){
